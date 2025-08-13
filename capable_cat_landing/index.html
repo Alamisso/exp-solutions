@@ -1,0 +1,267 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Experience-Solutions | Under Construction</title>
+  <meta name="description" content="We Are Reinventing Experience — Under Construction" />
+  <meta property="og:title" content="Experience-Solutions" />
+  <meta property="og:description" content="We Are Reinventing Experience. Under Construction." />
+  <meta property="og:type" content="website" />
+  <meta name="theme-color" content="#ffd700" />
+  <style>
+    :root {
+      --bg: #000;
+      --gold-1: #ffd700;
+      --gold-2: #ffcc33;
+      --gold-3: #ffb000;
+      --halo: rgba(255, 215, 0, 0.65);
+      --text-max: clamp(2.2rem, 6.5vw, 7rem);
+    }
+
+    html, body { height:100%; margin:0; background:var(--bg); color:#fff; overflow:hidden; }
+    body { font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Inter, Arial, "Helvetica Neue"; }
+
+    .stage { position:relative; width:100%; height:100%; display:grid; place-items:center; background:linear-gradient(180deg,#020202 0%,#090909 60%,#000 100%); isolation:isolate; }
+
+    /* Parallax layers (very light for perf) */
+    .parallax { position:absolute; inset:-10vmax; pointer-events:none; filter: blur(10px) saturate(1.05); }
+    .parallax.back { z-index:0; background:
+        radial-gradient(60vmax 30vmax at 20% 80%, rgba(255,210,120,0.06), transparent 60%),
+        radial-gradient(40vmax 25vmax at 80% 20%, rgba(255,230,180,0.05), transparent 60%);
+      opacity:.75; }
+    .parallax.front { z-index:1; background:
+        radial-gradient(35vmax 20vmax at 50% 60%, rgba(255,240,200,0.05), transparent 65%);
+      opacity:.65; }
+
+    /* subtle spotlight sweep behind headline */
+    .spotlight { position:absolute; inset:0; z-index:1; pointer-events:none;
+      background: radial-gradient(700px 300px at -20% 60%, rgba(255,210,120,0.08), transparent 65%);
+      animation: sweep 14s linear infinite; }
+    @keyframes sweep { 0%{ background-position: -120% 60%; } 100%{ background-position: 220% 60%; } }
+
+    h1 { position:relative; z-index:4; margin:0; font-weight:900; font-size:var(--text-max); text-align:center;
+      background: linear-gradient(95deg, var(--gold-1), var(--gold-2), var(--gold-3), var(--gold-1));
+      background-size: 250% 100%; -webkit-background-clip:text; background-clip:text; -webkit-text-fill-color:transparent;
+      text-shadow: 0 0 18px var(--halo), 0 0 40px rgba(255,200,0,.35);
+      animation: sheen 7s ease-in-out infinite, floaty 6s ease-in-out infinite; }
+    @keyframes sheen { 0%,100%{background-position:0% 50%} 50%{background-position:100% 50%} }
+    @keyframes floaty { 0%{transform:translateY(0)} 50%{transform:translateY(-12px)} 100%{transform:translateY(0)} }
+
+    canvas#particleNetwork { position:absolute; inset:0; z-index:3; display:block; }
+
+    @media (prefers-reduced-motion: reduce) {
+      h1, .spotlight { animation: none !important; }
+    }
+
+    .hint { position:absolute; bottom:16px; left:50%; transform:translateX(-50%); z-index:5; font-size:.9rem; color:#c9aa4a; opacity:.8; font-weight:600; letter-spacing:.02em; user-select:none; text-align:center; }
+    .hint small { display:block; opacity:.8; font-weight:500; }
+
+    .ui { position:absolute; right: 14px; bottom: 14px; z-index:6; display:flex; gap:8px; }
+    .ui button { background: rgba(20,20,20,.6); color:#e6c253; border: 1px solid rgba(230,194,83,.35); padding:8px 10px; border-radius:10px; font-weight:700; cursor:pointer; backdrop-filter: blur(6px); }
+    .ui button:hover { background: rgba(35,35,35,.7); }
+  </style>
+</head>
+<body>
+  <div class="stage">
+    <div class="parallax back" id="pxBack" aria-hidden="true"></div>
+    <div class="parallax front" id="pxFront" aria-hidden="true"></div>
+    <div class="spotlight" aria-hidden="true"></div>
+    <canvas id="particleNetwork"></canvas>
+    <h1>We Are Reinventing Experience</h1>
+    <div class="hint">
+      Click = ripple + scatter • Enter = EXP • L = Logo mode
+      <small>Effects auto‑save power when idle. Toggle UI →</small>
+    </div>
+    <div class="ui">
+      <button id="fxBtn" aria-pressed="false" title="Toggle effects">Effects: On</button>
+      <button id="modeBtn" title="Cycle modes">Mode: Free</button>
+    </div>
+
+    <!-- Hidden SVG sampler: replace the path "d" with your logo path for true logo mode -->
+    <svg id="logoSampler" width="0" height="0" style="position:absolute; left:-9999px; top:-9999px;">
+      <path id="logoPath" d="M10,10 h180 v80 h-180 z M60,40 v20 h80 v-20 z" fill="none" stroke="#fff" stroke-width="1" />
+    </svg>
+  </div>
+
+  <script>
+    (function(){
+      const canvas = document.getElementById('particleNetwork');
+      const ctx = canvas.getContext('2d', { alpha: true });
+      const fxBtn = document.getElementById('fxBtn');
+      const modeBtn = document.getElementById('modeBtn');
+      const pxBack = document.getElementById('pxBack');
+      const pxFront = document.getElementById('pxFront');
+      const logoPathEl = document.getElementById('logoPath');
+
+      let w = 0, h = 0, dpr = Math.max(window.devicePixelRatio || 1, 1);
+
+      // Config tuned for speed
+      const cfg = { baseDensity: 18000, mobileDensity: 26000, linkDist: 110, mobileLinkDist: 90, maxLinksPerParticle: 4, dotRadius: 1.4, dotShadow: 5, expAttract: 0.09, damping: 0.9 };
+
+      let particles = [], grid = new Map(), cellSize = 100, mode = 'free';
+      let ripples = [];
+      let lastInteraction = Date.now();
+      let lowPower = false; // idle saver
+      let effectsOn = true;
+      let flares = [];
+
+      function resize(){
+        const bw = Math.floor(window.innerWidth), bh = Math.floor(window.innerHeight);
+        canvas.style.width = bw + 'px'; canvas.style.height = bh + 'px';
+        canvas.width = Math.floor(bw * dpr); canvas.height = Math.floor(bh * dpr);
+        ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+        w = bw; h = bh;
+        const isMobile = w < 768;
+        const density = isMobile ? cfg.mobileDensity : cfg.baseDensity;
+        const count = Math.max(70, Math.min(220, Math.floor((w*h)/density)));
+        const link = isMobile ? cfg.mobileLinkDist : cfg.linkDist;
+        cellSize = link;
+        particles = particles.slice(0, count);
+        while (particles.length < count) particles.push({ x: Math.random()*w, y: Math.random()*h, vx:(Math.random()-0.5)*0.6, vy:(Math.random()-0.5)*0.6, tx:null, ty:null });
+        if (mode !== 'free') rebuildTargets();
+      }
+
+      function key(x,y){ return ((x/cellSize)|0) + ',' + ((y/cellSize)|0); }
+      function buildGrid(){ grid.clear(); for (let i=0;i<particles.length;i++){ const p=particles[i]; const k=key(p.x,p.y); (grid.get(k)||grid.set(k,[]).get(k)).push(i); } }
+      function neighbors(i){ const p=particles[i]; const cx=(p.x/cellSize)|0, cy=(p.y/cellSize)|0; const list=[]; for(let dy=-1;dy<=1;dy++){ for(let dx=-1;dx<=1;dx++){ const arr=grid.get((cx+dx)+","+(cy+dy)); if(arr) list.push(...arr); } } return list; }
+
+      function buildEXPShape(){
+        const off=document.createElement('canvas'), octx=off.getContext('2d');
+        const width=Math.min(w*0.62,900), height=Math.min(h*0.34,280);
+        off.width=Math.ceil(width); off.height=Math.ceil(height);
+        octx.fillStyle='#fff'; octx.font=`${Math.floor(height*0.86)}px 900 Impact, system-ui, Arial, sans-serif`; octx.textBaseline='middle';
+        octx.fillText('EXP',0,height/2);
+        const data=octx.getImageData(0,0,off.width,off.height).data, step=Math.max(5,Math.floor(Math.sqrt((off.width*off.height)/1800)));
+        const pts=[]; for(let y=0;y<off.height;y+=step){ for(let x=0;x<off.width;x+=step){ if(data[(y*off.width+x)*4+3]>64) pts.push({x:x-off.width/2,y:y-off.height/2}); } }
+        const cx=w/2, cy=h/2; return pts.map(p=>({x:cx+p.x,y:cy+p.y}));
+      }
+
+      function buildLogoShape(){
+        // Use SVG path length sampling for crisp logo outlines
+        try {
+          const path = logoPathEl; if (!path) return null;
+          const total = path.getTotalLength(); if (!isFinite(total) || total <= 0) return null;
+          const sample = Math.max(80, Math.min(800, Math.floor(particles.length * 0.9)));
+          const box = path.getBBox();
+          const scale = Math.min((w*0.6)/box.width, (h*0.3)/box.height);
+          const offsetX = w/2 - (box.x + box.width/2)*scale;
+          const offsetY = h/2 - (box.y + box.height/2)*scale;
+          const pts = [];
+          for (let i=0;i<sample;i++){
+            const p = path.getPointAtLength((i/sample)*total);
+            pts.push({ x: offsetX + p.x*scale, y: offsetY + p.y*scale });
+          }
+          return pts;
+        } catch (e) { return null; }
+      }
+
+      function assignTargetsFromPoints(points){
+        if (!points || !points.length) return;
+        const stepPick=Math.max(1,Math.floor(points.length/particles.length));
+        for(let i=0,j=0;i<particles.length;i++,j+=stepPick){ const t=points[j%points.length]; particles[i].tx=t.x; particles[i].ty=t.y; }
+      }
+
+      function rebuildTargets(){
+        if (mode==='exp') assignTargetsFromPoints(buildEXPShape());
+        else if (mode==='logo') assignTargetsFromPoints(buildLogoShape());
+      }
+
+      function ripple(x,y){ ripples.push({x,y,r:2,alpha:0.8}); if(ripples.length>6) ripples.shift(); }
+
+      function impulse(x, y){
+        const maxForce = 9; const radius = Math.min(Math.max(Math.min(w,h)*0.25, 180), 420); const r2 = radius*radius;
+        for (let p of particles){ const dx=p.x-x, dy=p.y-y; const d2=dx*dx+dy*dy; if (d2 < r2){ const d=Math.max(Math.sqrt(d2),12); const f=1-(d/radius); const boost=maxForce*f; p.vx += (dx/d)*boost*(0.6+Math.random()*0.4); p.vy += (dy/d)*boost*(0.6+Math.random()*0.4); } }
+      }
+
+      function scatterAndRipple(x,y){ ripple(x,y); impulse(x,y); for (let p of particles){ p.tx=null; p.ty=null; } mode='free'; updateModeLabel(); lastInteraction = Date.now(); }
+
+      function maybeSpawnFlare(){
+        if (!effectsOn || lowPower) return;
+        if (Math.random() < 0.02) {
+          const y = Math.random()*h*0.8 + h*0.1;
+          const speed = 1 + Math.random()*1.5;
+          flares.push({ x:-50, y, vx:speed, life:1 });
+          if (flares.length>5) flares.shift();
+        }
+      }
+
+      function drawFlares(){
+        for (let f of flares){
+          ctx.save();
+          ctx.globalAlpha = 0.6*f.life;
+          ctx.beginPath(); ctx.moveTo(f.x, f.y); ctx.lineTo(f.x+80, f.y);
+          ctx.strokeStyle='rgba(255,215,120,0.6)'; ctx.lineWidth=2; ctx.stroke();
+          // glow
+          ctx.shadowColor='rgba(255,215,120,0.8)'; ctx.shadowBlur=12; ctx.beginPath(); ctx.arc(f.x+80, f.y, 2.5, 0, Math.PI*2); ctx.fillStyle='rgba(255,240,180,0.9)'; ctx.fill();
+          ctx.restore();
+          f.x += f.vx; f.life *= 0.985;
+        }
+        flares = flares.filter(f=> f.x < w+120 && f.life>0.05);
+      }
+
+      function update(){
+        // Idle saver: drop to lowPower after 15s no interaction
+        lowPower = (Date.now()-lastInteraction>15000);
+
+        buildGrid();
+        for (let p of particles){
+          if (mode!=='free' && p.tx!=null){ p.vx+=(p.tx-p.x)*cfg.expAttract; p.vy+=(p.ty-p.y)*cfg.expAttract; p.vx*=cfg.damping; p.vy*=cfg.damping; }
+          if (lowPower) { p.vx*=0.985; p.vy*=0.985; }
+          p.x+=p.vx; p.y+=p.vy;
+          if(p.x<-5) p.x=w+5; else if(p.x>w+5) p.x=-5; if(p.y<-5) p.y=h+5; else if(p.y>h+5) p.y=-5;
+        }
+
+        ctx.clearRect(0,0,w,h);
+
+        // Links (skip in lowPower or if effects off)
+        if (effectsOn && !lowPower){
+          ctx.lineWidth = 0.8; ctx.lineCap='round';
+          for (let i=0;i<particles.length;i++){
+            const a=particles[i]; let links=0; const neigh=neighbors(i);
+            for(const j of neigh){ if(j<=i) continue; const b=particles[j]; const dx=a.x-b.x, dy=a.y-b.y; const d2=dx*dx+dy*dy; if(d2<cellSize*cellSize){ const alpha=1-(Math.sqrt(d2)/cellSize); ctx.strokeStyle=`rgba(255,215,0,${alpha*0.38})`; ctx.beginPath(); ctx.moveTo(a.x,a.y); ctx.lineTo(b.x,b.y); ctx.stroke(); if(++links>=cfg.maxLinksPerParticle) break; } }
+          }
+        }
+
+        // Dots
+        ctx.fillStyle='rgba(255,235,180,.95)'; ctx.shadowColor='rgba(255,208,119,.6)'; ctx.shadowBlur=cfg.dotShadow;
+        for (let p of particles){ ctx.beginPath(); ctx.arc(p.x,p.y,cfg.dotRadius,0,Math.PI*2); ctx.fill(); }
+
+        // Ripples
+        for (let r of ripples){ ctx.beginPath(); ctx.arc(r.x,r.y,r.r,0,Math.PI*2); ctx.strokeStyle=`rgba(255,215,0,${r.alpha})`; ctx.lineWidth=2; ctx.stroke(); r.r+=6; r.alpha*=0.92; }
+        ripples = ripples.filter(r=> r.alpha>0.05);
+
+        // Flares
+        maybeSpawnFlare();
+        drawFlares();
+      }
+
+      let raf=null; function loop(){ update(); raf=requestAnimationFrame(loop); }
+
+      function setMode(m){ mode=m; if (mode==='free'){ particles.forEach(p=>{p.tx=null;p.ty=null;}); }
+        else rebuildTargets(); updateModeLabel(); lastInteraction = Date.now(); }
+      function toggleEXP(){ setMode(mode==='exp' ? 'free' : 'exp'); }
+      function toggleLogo(){ setMode(mode==='logo' ? 'free' : 'logo'); }
+      function updateModeLabel(){ modeBtn.textContent = 'Mode: ' + (mode==='free'?'Free': mode==='exp'?'EXP':'Logo'); }
+
+      // Effects toggle
+      fxBtn.addEventListener('click', ()=>{ effectsOn = !effectsOn; fxBtn.textContent = effectsOn ? 'Effects: On' : 'Effects: Off'; fxBtn.setAttribute('aria-pressed', String(!effectsOn)); lastInteraction = Date.now(); });
+      modeBtn.addEventListener('click', ()=>{ if (mode==='free') setMode('exp'); else if (mode==='exp') setMode('logo'); else setMode('free'); });
+
+      window.addEventListener('click', e=>{ const t=e.target; if(t.id==='fxBtn'||t.id==='modeBtn') return; scatterAndRipple(e.clientX, e.clientY); });
+      window.addEventListener('keydown', e=>{ if (e.key==='Enter'){ e.preventDefault(); toggleEXP(); } else if (e.key.toLowerCase()==='l'){ e.preventDefault(); toggleLogo(); } });
+      window.addEventListener('mousemove', (e)=>{ parallax(e); }, {passive:true});
+      window.addEventListener('resize', resize, {passive:true});
+
+      // Mouse parallax
+      function parallax(e){
+        const cx = w/2, cy = h/2; const dx = (e.clientX - cx)/cx; const dy = (e.clientY - cy)/cy;
+        pxBack.style.transform = `translate3d(${dx*10}px, ${dy*6}px, 0)`;
+        pxFront.style.transform = `translate3d(${dx*20}px, ${dy*12}px, 0)`;
+      }
+
+      resize(); loop(); updateModeLabel();
+    })();
+  </script>
+</body>
+</html>
